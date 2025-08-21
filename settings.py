@@ -5,9 +5,11 @@ Centralizes all configuration settings and constants.
 
 import os
 import sys
+import json
 
 # Application Constants
 TRACKER_FILE = 'tracker.json'
+SETTINGS_FILE = 'settings.json'
 DEFAULT_INTERVAL = 1 * 60 * 60  # 1 hour (changed from 24 hours)
 
 # Directory Configuration
@@ -84,7 +86,7 @@ class GUISettings:
 
 class QBittorrentConfig:
     """qBittorrent configuration settings"""
-    
+
     def __init__(self):
         self.host = 'localhost'
         self.port = 8080
@@ -99,6 +101,27 @@ class QBittorrentConfig:
             'username': self.username,
             'password': self.password,
             'category': self.category
+        }
+
+class TorrentClientConfig:
+    """Configuration for torrent client selection"""
+
+    SUPPORTED_CLIENTS = {
+        'qbittorrent': 'qBittorrent',
+        'default': 'System Default',
+        'custom': 'Custom Command'
+    }
+
+    def __init__(self):
+        self.preferred_client = 'qbittorrent'  # Default to qBittorrent
+        self.custom_command = ''  # Custom command for opening magnet links
+        self.fallback_to_default = True  # Fallback to system default if qBittorrent fails
+
+    def as_dict(self):
+        return {
+            'preferred_client': self.preferred_client,
+            'custom_command': self.custom_command,
+            'fallback_to_default': self.fallback_to_default
         }
 
 # Network Configuration
@@ -159,7 +182,235 @@ class DialogSettings:
         dialog.geometry(f'+{x}+{y}')
 
 # Test Configuration
+class QualitySettings:
+    """Settings for quality filtering preferences"""
+
+    # Available quality options
+    QUALITY_OPTIONS = [
+        '360p', '480p', '720p', '1080p', '1440p', '2160p', '4K',
+        'SD', 'HD', 'FHD', 'UHD', 'WEBRip', 'BluRay', 'DVD', 'HDTV'
+    ]
+
+    def __init__(self):
+        # Default quality preferences (empty means no filtering)
+        self.preferred_qualities = []  # List of preferred quality strings
+        self.blocked_qualities = []    # List of blocked quality strings
+        self.quality_filter_mode = 'preferred'  # 'preferred', 'blocked', or 'both'
+
+    def matches_quality_filter(self, title):
+        """Check if a title matches the quality filter settings"""
+        if self.quality_filter_mode == 'disabled':
+            return True
+
+        title_lower = title.lower()
+
+        # Check preferred qualities
+        if self.quality_filter_mode in ['preferred', 'both'] and self.preferred_qualities:
+            for quality in self.preferred_qualities:
+                if quality.lower() in title_lower:
+                    return True
+            if self.quality_filter_mode == 'preferred':
+                return False  # If preferred mode and no match, reject
+
+        # Check blocked qualities
+        if self.quality_filter_mode in ['blocked', 'both'] and self.blocked_qualities:
+            for quality in self.blocked_qualities:
+                if quality.lower() in title_lower:
+                    return False  # Block this title
+
+        # If we get here, either no filters or passed all checks
+        return True
+
+    def get_quality_score(self, title):
+        """Get a quality score for sorting torrents (higher is better)"""
+        title_lower = title.lower()
+        score = 0
+
+        # Higher scores for preferred qualities
+        for preferred in self.preferred_qualities:
+            if preferred.lower().strip() in title_lower:
+                score += 10
+
+        # Negative scores for blocked qualities (though these should be filtered out)
+        for blocked in self.blocked_qualities:
+            if blocked.lower().strip() in title_lower:
+                score -= 100
+
+        return score
+
+    def filter_torrents(self, torrents):
+        """Filter a list of torrents based on quality settings"""
+        if self.quality_filter_mode == 'disabled':
+            return torrents
+
+        filtered = []
+        for torrent in torrents:
+            if self.matches_quality_filter(torrent.get('title', '')):
+                # Add quality score for sorting
+                torrent_copy = torrent.copy()
+                torrent_copy['quality_score'] = self.get_quality_score(torrent.get('title', ''))
+                filtered.append(torrent_copy)
+
+        # Sort by quality score (descending) and then by row_index (more recent first)
+        filtered.sort(key=lambda x: (-x.get('quality_score', 0), x.get('row_index', 999)))
+        return filtered
+
 class TestSettings:
     """Settings for testing and debugging"""
-    
+
     HEADLESS_TEST_LIMIT = 2  # Limit number of entries processed in headless mode for testing
+
+
+class SettingsManager:
+    """Manages saving and loading of all application settings"""
+
+    def __init__(self, settings_file=SETTINGS_FILE):
+        self.settings_file = settings_file
+        self._ensure_settings_directory()
+
+    def _ensure_settings_directory(self):
+        """Ensure the directory for settings file exists"""
+        directory = os.path.dirname(os.path.abspath(self.settings_file))
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+
+    def save_settings(self, qb_config, torrent_config, quality_settings, check_interval):
+        """Save all settings to file"""
+        try:
+            settings_data = {
+                'qbittorrent': qb_config.as_dict(),
+                'torrent_client': torrent_config.as_dict(),
+                'quality_settings': {
+                    'preferred_qualities': quality_settings.preferred_qualities,
+                    'blocked_qualities': quality_settings.blocked_qualities,
+                    'quality_filter_mode': quality_settings.quality_filter_mode
+                },
+                'check_interval': check_interval,
+                'app_version': '1.0'  # For future compatibility checking
+            }
+
+            with open(self.settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings_data, f, indent=2, ensure_ascii=False)
+
+            print(f"[INFO] Settings saved to {self.settings_file}")
+            return True, ""
+
+        except Exception as e:
+            error_msg = f"Failed to save settings: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return False, error_msg
+
+    def load_settings(self):
+        """Load all settings from file"""
+        try:
+            if not os.path.exists(self.settings_file):
+                print(f"[INFO] Settings file {self.settings_file} does not exist, using defaults")
+                return self._get_default_settings()
+
+            with open(self.settings_file, 'r', encoding='utf-8') as f:
+                settings_data = json.load(f)
+
+            # Create config objects from loaded data
+            qb_config = QBittorrentConfig()
+            if 'qbittorrent' in settings_data:
+                qb_data = settings_data['qbittorrent']
+                qb_config.host = qb_data.get('host', qb_config.host)
+                qb_config.port = qb_data.get('port', qb_config.port)
+                qb_config.username = qb_data.get('username', qb_config.username)
+                qb_config.password = qb_data.get('password', qb_config.password)
+                qb_config.category = qb_data.get('category', qb_config.category)
+
+            torrent_config = TorrentClientConfig()
+            if 'torrent_client' in settings_data:
+                tc_data = settings_data['torrent_client']
+                torrent_config.preferred_client = tc_data.get('preferred_client', torrent_config.preferred_client)
+                torrent_config.custom_command = tc_data.get('custom_command', torrent_config.custom_command)
+                torrent_config.fallback_to_default = tc_data.get('fallback_to_default', torrent_config.fallback_to_default)
+
+            quality_settings = QualitySettings()
+            if 'quality_settings' in settings_data:
+                qs_data = settings_data['quality_settings']
+                quality_settings.preferred_qualities = qs_data.get('preferred_qualities', quality_settings.preferred_qualities)
+                quality_settings.blocked_qualities = qs_data.get('blocked_qualities', quality_settings.blocked_qualities)
+                quality_settings.quality_filter_mode = qs_data.get('quality_filter_mode', quality_settings.quality_filter_mode)
+
+            check_interval = settings_data.get('check_interval', DEFAULT_INTERVAL)
+
+            print(f"[INFO] Settings loaded from {self.settings_file}")
+            return qb_config, torrent_config, quality_settings, check_interval
+
+        except Exception as e:
+            error_msg = f"Failed to load settings: {str(e)}"
+            print(f"[ERROR] {error_msg}")
+            return self._get_default_settings()
+
+    def _get_default_settings(self):
+        """Get default settings when file doesn't exist or is corrupted"""
+        return (
+            QBittorrentConfig(),
+            TorrentClientConfig(),
+            QualitySettings(),
+            DEFAULT_INTERVAL
+        )
+
+    def backup_settings(self, backup_path=None):
+        """Create a backup of current settings"""
+        try:
+            if backup_path is None:
+                backup_path = f"{self.settings_file}.backup"
+
+            if os.path.exists(self.settings_file):
+                import shutil
+                shutil.copy2(self.settings_file, backup_path)
+                print(f"[INFO] Settings backup created: {backup_path}")
+                return True, backup_path
+            else:
+                return False, "No settings file to backup"
+
+        except Exception as e:
+            return False, f"Backup failed: {str(e)}"
+
+    def restore_settings(self, backup_path=None):
+        """Restore settings from backup"""
+        try:
+            if backup_path is None:
+                backup_path = f"{self.settings_file}.backup"
+
+            if not os.path.exists(backup_path):
+                return False, f"Backup file not found: {backup_path}"
+
+            import shutil
+            shutil.copy2(backup_path, self.settings_file)
+            print(f"[INFO] Settings restored from: {backup_path}")
+            return True, backup_path
+
+        except Exception as e:
+            return False, f"Restore failed: {str(e)}"
+
+    def export_settings(self, export_path):
+        """Export settings to a specific path"""
+        try:
+            if os.path.exists(self.settings_file):
+                import shutil
+                shutil.copy2(self.settings_file, export_path)
+                print(f"[INFO] Settings exported to: {export_path}")
+                return True, export_path
+            else:
+                return False, "No settings file to export"
+
+        except Exception as e:
+            return False, f"Export failed: {str(e)}"
+
+    def import_settings(self, import_path):
+        """Import settings from a specific path"""
+        try:
+            if not os.path.exists(import_path):
+                return False, f"Import file not found: {import_path}"
+
+            import shutil
+            shutil.copy2(import_path, self.settings_file)
+            print(f"[INFO] Settings imported from: {import_path}")
+            return True, import_path
+
+        except Exception as e:
+            return False, f"Import failed: {str(e)}"

@@ -25,7 +25,7 @@ class NyaaScraper:
     )
     
     @staticmethod
-    def search(query):
+    def search(query, quality_settings=None):
         """Search Nyaa.si for the given query and return the results"""
         logging.info(f"Searching Nyaa.si for: {query}")
         try:
@@ -104,7 +104,11 @@ class NyaaScraper:
                     parsed_date, parsed_time = NyaaScraper.parse_date_time(date_text)
                     date = parsed_date
                     time = parsed_time
-                
+
+                # Apply quality filtering if settings provided
+                if quality_settings and not quality_settings.matches_quality_filter(title):
+                    continue
+
                 results.append({
                     'title': title,
                     'episode': episode_info,
@@ -305,7 +309,7 @@ class NyaaScraper:
             return []
 
     @staticmethod
-    def get_latest_episode_and_magnet(url, anime_title=None, tracker=None):
+    def get_latest_episode_and_magnet(url, anime_title=None, tracker=None, quality_settings=None):
         """Returns (season, episode, magnet)"""
         logging.info(f"Attempting to scrape URL: {url}")
         try:
@@ -367,7 +371,12 @@ class NyaaScraper:
                     
                     season_text = f" Season {season_info}" if season_info else ""
                     logging.debug(f"Episode extraction - Title: '{torrent_title}' -> Episode: {ep_num}{season_text} (matched: '{matched_text}') - Row index: {i}")
-                    
+
+                    # Apply quality filtering if settings provided
+                    if quality_settings and not quality_settings.matches_quality_filter(torrent_title):
+                        logging.debug(f"Quality filter rejected: {torrent_title}")
+                        continue
+
                     episodes.append({
                         'episode': ep_num,
                         'season': season_info,

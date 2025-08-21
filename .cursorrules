@@ -1,0 +1,81 @@
+# Nyaa Auto Downloader - Cursor Rules
+
+## Build Automation Rule
+
+**Always rebuild executable after code changes**
+
+### Trigger Conditions:
+- Any Python source file is modified (*.py)
+- Any configuration file that affects the build is changed
+- When explicitly requested
+- After major feature implementations
+- Before releasing new versions
+
+### Expected Behavior:
+1. **Automatic Detection**: Cursor should detect changes to source files
+2. **Clean Build**: Always remove old executable before building new one
+3. **Error Reporting**: Show clear error messages if build fails
+4. **Success Confirmation**: Confirm when new executable is ready
+5. **File Integrity**: Ensure new executable works and is properly signed/updated
+
+### Actions to Perform:
+1. **Clean existing build artifacts**
+   - Remove `dist/Nyaa.si Anime Auto Downloader.exe`
+   - Remove `build/` directory contents
+   - Clean any `__pycache__` directories
+
+2. **Rebuild executable using PyInstaller**
+   - Run: `pyinstaller NyaaAutoDownloader.spec`
+   - Or fallback: `pyinstaller --onefile --name "Nyaa.si Anime Auto Downloader" --icon "dist/Icon.ico" main.py`
+
+3. **Verify build success**
+   - Check if new executable exists
+   - Log build status
+
+### Files to Monitor for Changes:
+- `main.py`
+- `modules/*.py`
+- `utils/*.py`
+- `settings.py`
+- `*.spec` files
+- `requirements.txt`
+
+### Build Commands:
+
+**Automated Options:**
+```bash
+# Python script (cross-platform)
+python build_exe.py
+
+# Windows batch file
+rebuild_exe.bat
+```
+
+**Manual Commands:**
+```bash
+# Clean build artifacts
+rm -rf dist/Nyaa.si Anime Auto Downloader.exe build/
+
+# Build with spec file
+pyinstaller NyaaAutoDownloader.spec
+
+# Build without spec file (fallback)
+pyinstaller --onefile --name "Nyaa.si Anime Auto Downloader" --icon "dist/Icon.ico" main.py
+```
+
+**Available Files:**
+- `build_exe.py` - Python build script with error handling
+- `rebuild_exe.bat` - Windows batch file for easy rebuilding
+- `.cursorrules` - This automation configuration
+
+### Error Handling:
+- If build fails, show error message with details
+- Don't delete source files on build failure
+- Allow manual rebuild option
+
+### Automation Level:
+- **HIGH** - Automatically rebuild on any source code change
+- **MEDIUM** - Ask for confirmation before rebuilding
+- **LOW** - Only rebuild when explicitly requested
+
+Set to **HIGH** automation for development efficiency.

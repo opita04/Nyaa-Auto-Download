@@ -7,14 +7,17 @@ import requests
 from datetime import datetime
 import argparse
 import time
+import os
 
 # Import modules
 from modules.nyaa_scraper import NyaaScraper
 from modules.anime_tracker import AnimeTracker
 from modules.qbittorrent_client import QBittorrentClient
 from modules.settings_panel import SettingsPanel
+from modules.generic_torrent_client import GenericTorrentClient
 from utils.logging_utils import setup_logging, create_trace_file
 from settings import *
+from settings import SettingsManager
 
 # Initialize trace file
 TRACE_PATH = create_trace_file()
@@ -30,14 +33,123 @@ class App:
         self.root = root
         self.root.title(GUISettings.WINDOW_TITLE)
         self.tracker = AnimeTracker()
+        self.settings_manager = SettingsManager()
+
+        # Initialize torrent client with default settings first
         self.qb_config = QBittorrentConfig()
+        self.torrent_config = TorrentClientConfig()
+        self.quality_settings = QualitySettings()
         self.check_interval = DEFAULT_INTERVAL
+        self.torrent_client = GenericTorrentClient(self.torrent_config)
+
         self.check_thread = None
         self.stop_event = threading.Event()
+        self.qb_health_check_thread = None
         self._setup_gui()
         self._load_tracker()
+
+        # Load settings after GUI is set up (so we can log)
+        self._load_settings()
+
         self._log('Application started.')
         self._start_periodic_check()
+        self._start_qb_health_check()
+
+    def _load_settings(self):
+        """Load all settings from file"""
+        try:
+            self.qb_config, self.torrent_config, self.quality_settings, self.check_interval = \
+                self.settings_manager.load_settings()
+
+            # Reinitialize torrent client with loaded settings
+            self.torrent_client = GenericTorrentClient(self.torrent_config)
+
+            self._log('Settings loaded successfully.')
+            self._update_settings_status('Settings loaded!')
+        except Exception as e:
+            self._log(f'Failed to load settings: {e}. Using defaults.')
+            self._update_settings_status('Using default settings', error=True)
+
+    def _save_settings(self):
+        """Save all current settings"""
+        try:
+            success, error_msg = self.settings_manager.save_settings(
+                self.qb_config, self.torrent_config, self.quality_settings, self.check_interval
+            )
+            if success:
+                self._log('Settings saved successfully.')
+                self._update_settings_status('Settings saved!')
+            else:
+                self._log(f'Failed to save settings: {error_msg}')
+                self._update_settings_status(f'Failed to save settings: {error_msg}', error=True)
+        except Exception as e:
+            self._log(f'Failed to save settings: {e}')
+            self._update_settings_status(f'Failed to save settings: {e}', error=True)
+
+    def _add_settings_status_indicator(self):
+        """Add a settings status indicator to the GUI"""
+        # Create a small frame for settings status
+        self.settings_status_frame = ttk.Frame(self.left_frame)
+        self.settings_status_frame.grid(row=3, column=0, sticky='ew', padx=5, pady=2)
+
+        # Settings status label
+        ttk.Label(self.settings_status_frame, text='Settings:', font=('TkDefaultFont', 8)).pack(side='left')
+        self.settings_status_label = ttk.Label(self.settings_status_frame, text='Loaded', font=('TkDefaultFont', 8), foreground='green')
+        self.settings_status_label.pack(side='left', padx=5)
+
+        # Settings info button
+        info_btn = ttk.Button(self.settings_status_frame, text='ℹ️', width=3,
+                             command=self._show_settings_info)
+        info_btn.pack(side='right')
+
+    def _add_qbittorrent_status(self):
+        """Add qBittorrent status indicator at the bottom of the GUI"""
+        # Create a frame for qBittorrent status at the very bottom
+        self.qb_status_frame = ttk.Frame(self.left_frame)
+        self.qb_status_frame.grid(row=4, column=0, sticky='ew', padx=5, pady=5)
+
+        self.qb_status_label = ttk.Label(self.qb_status_frame, text="qBittorrent Status:")
+        self.qb_status_label.pack(side='left')
+
+        self.qb_status_indicator = ttk.Label(self.qb_status_frame, text="🔄 Checking...", font=('TkDefaultFont', 10, 'bold'))
+        self.qb_status_indicator.pack(side='left', padx=5)
+
+        self.qb_status_message = ttk.Label(self.qb_status_frame, text="", foreground="gray")
+        self.qb_status_message.pack(side='left', padx=5, fill='x', expand=True)
+
+        # Add manual connection check button
+        self.qb_check_btn = ttk.Button(self.qb_status_frame, text="🔄 Check", width=8,
+                                      command=self._check_qb_connection)
+        self.qb_check_btn.pack(side='right', padx=5)
+
+    def _update_settings_status(self, message, error=False):
+        """Update the settings status indicator"""
+        color = 'red' if error else 'green'
+        self.settings_status_label.config(text=message, foreground=color)
+
+        # Auto-hide the message after 3 seconds
+        def clear_status():
+            self.settings_status_label.config(text='Ready', foreground='gray')
+
+        self.root.after(3000, clear_status)
+
+    def _show_settings_info(self):
+        """Show settings information dialog"""
+        info_msg = f"""Settings Information:
+
+📁 Settings File: {SETTINGS_FILE}
+📂 Anime List: {TRACKER_FILE}
+
+Current Status:
+• Settings: {'Loaded' if os.path.exists(SETTINGS_FILE) else 'Using defaults'}
+• Anime List: {'Loaded' if os.path.exists(TRACKER_FILE) else 'Empty'}
+
+Settings are automatically saved when you close the settings panel.
+Anime list is automatically saved when modified.
+
+Backup: {SETTINGS_FILE}.backup"""
+
+        messagebox.showinfo("Settings Info", info_msg)
 
     def _setup_gui(self):
         with open(TRACE_PATH, 'a') as f: f.write('IN SETUP GUI\n')
@@ -82,10 +194,15 @@ class App:
         search_btn.pack(side='top', fill='x', pady=(0, 2))
         
         # Settings Button (Gear)
-        self.settings_btn = tk.Button(controls_frame, text="⚙️", width=3, command=self.toggle_settings_panel, 
+        self.settings_btn = tk.Button(controls_frame, text="⚙️", width=3, command=self.toggle_settings_panel,
                                     font=('TkDefaultFont', 12))
         self.settings_btn.pack(side='top', fill='x')
-        
+
+        # Bulk Torrents Button (List icon)
+        self.bulk_btn = tk.Button(controls_frame, text="📋", width=3, command=self.show_bulk_torrents_panel,
+                                font=('TkDefaultFont', 12))
+        self.bulk_btn.pack(side='top', fill='x')
+
         # Hidden panels
         self.search_panel_visible = False
 
@@ -124,34 +241,152 @@ class App:
         force_btn.grid(row=4, column=0, sticky='ew', pady=3)
 
         # Initialize Settings Panel (hidden by default)
-        self.settings_panel = SettingsPanel(self.left_frame, self.qb_config, self.check_interval, self.on_settings_save)
+        self.settings_frame = ttk.Frame(self.main_paned)
+        self.settings_panel = SettingsPanel(self.settings_frame, self.qb_config, self.check_interval, self.on_settings_save, self.torrent_config, self.quality_settings)
 
         # Status Log
         log_frame = ttk.LabelFrame(self.left_frame, text='Status Log')
-        log_frame.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=GUISettings.LOG_TEXT_HEIGHT, 
+        log_frame.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=GUISettings.LOG_TEXT_HEIGHT,
                                                 state='disabled', wrap='word')
         self.log_text.pack(fill='both', expand=True)
 
-        self.left_frame.rowconfigure(1, weight=1)
-        self.left_frame.rowconfigure(3, weight=1)
         self.left_frame.columnconfigure(0, weight=1)
-        
+
         # Setup episodes panel
         self._setup_episodes_panel()
-        
+
         # Setup search panel
         self._setup_search_panel()
-    
-    def on_settings_save(self, qb_config, check_interval):
+
+        # Setup bulk torrents panel
+        self._setup_bulk_torrents_panel()
+
+        # Add settings status indicator
+        self._add_settings_status_indicator()
+
+        # Add qBittorrent status at the bottom
+        self._add_qbittorrent_status()
+
+        # Configure row weights for proper expansion
+        self.left_frame.rowconfigure(1, weight=1)  # Tracked Anime List expands
+        self.left_frame.rowconfigure(2, weight=1)  # Status Log expands
+
+        # Check torrent client connection on startup (moved after log_text is created)
+        self._check_torrent_connection()
+
+    def on_settings_save(self, qb_config, check_interval, torrent_config=None, quality_settings=None):
         """Callback for when settings are saved"""
         self.qb_config = qb_config
         self.check_interval = check_interval
-        self._log('Configuration saved.')
+        if torrent_config:
+            self.torrent_config = torrent_config
+            self.torrent_client = GenericTorrentClient(self.torrent_config)
+        if quality_settings:
+            self.quality_settings = quality_settings
+
+        # Save all settings to file
+        self._save_settings()
+
+        # Re-check torrent client connection after settings change
+        self._check_torrent_connection()
     
     def toggle_settings_panel(self):
         """Toggle the visibility of the settings panel"""
-        self.settings_panel.toggle()
+        if hasattr(self, 'settings_panel_visible') and self.settings_panel_visible:
+            self.hide_settings_panel()
+        else:
+            self.show_settings_panel()
+
+    def show_settings_panel(self):
+        """Show the settings panel"""
+        if not hasattr(self, 'settings_panel_visible'):
+            self.settings_panel_visible = False
+
+        if not self.settings_panel_visible:
+            # Hide other panels if they're visible
+            if self.episodes_visible:
+                self.hide_episodes_panel()
+            if self.search_panel_visible:
+                self.hide_search_panel()
+            if hasattr(self, 'bulk_torrents_panel_visible') and self.bulk_torrents_panel_visible:
+                self.hide_bulk_torrents_panel()
+
+            # Add the settings panel to the main paned window
+            self.main_paned.add(self.settings_frame, weight=1)
+            self.settings_panel_visible = True
+            # Focus on the first entry field in the settings panel
+            if hasattr(self.settings_panel, 'qb_host'):
+                self.settings_panel.qb_host.focus()
+
+    def hide_settings_panel(self):
+        """Hide the settings panel"""
+        if hasattr(self, 'settings_panel_visible') and self.settings_panel_visible:
+            self.main_paned.remove(self.settings_frame)
+            self.settings_panel_visible = False
+
+    def _check_qb_connection(self):
+        """Check qBittorrent connection and update status indicator"""
+        try:
+            qb = QBittorrentClient(self.qb_config)
+            connected, err = qb.connect()
+
+            if connected:
+                self.qb_status_indicator.config(text="✅ Connected", foreground="green")
+                self.qb_status_message.config(text="qBittorrent is running and accessible", foreground="green")
+                self._log('qBittorrent connection successful')
+            else:
+                self.qb_status_indicator.config(text="❌ Disconnected", foreground="red")
+                self.qb_status_message.config(text=f"Connection failed: {err}", foreground="red")
+                self._log(f'qBittorrent connection failed: {err}')
+
+                # Show warning dialog for connection failure
+                messagebox.showwarning(
+                    "qBittorrent Connection Warning",
+                    f"qBittorrent is not accessible at {self.qb_config.host}:{self.qb_config.port}\n\n"
+                    f"Error: {err}\n\n"
+                    "Please ensure qBittorrent is running and the connection settings are correct.\n"
+                    "You can check/update settings via the ⚙️ button."
+                )
+
+        except Exception as e:
+            self.qb_status_indicator.config(text="❌ Error", foreground="red")
+            self.qb_status_message.config(text=f"Connection check failed: {str(e)}", foreground="red")
+            self._log(f'qBittorrent connection check error: {e}')
+
+    def _check_torrent_connection(self):
+        """Check torrent client connection and update status indicator"""
+        try:
+            available, err = self.torrent_client.test_connection()
+
+            if available:
+                client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Unknown")
+                self.qb_status_indicator.config(text="✅ Connected", foreground="green")
+                if self.torrent_config.preferred_client == 'qbittorrent':
+                    self.qb_status_message.config(text=f"{client_name} is running and accessible", foreground="green")
+                else:
+                    self.qb_status_message.config(text=f"{client_name} client configured", foreground="green")
+                self._log(f'{client_name} connection successful')
+            else:
+                client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Unknown")
+                self.qb_status_indicator.config(text="❌ Disconnected", foreground="red")
+                self.qb_status_message.config(text=f"{client_name} connection failed: {err}", foreground="red")
+                self._log(f'{client_name} connection failed: {err}')
+
+        except Exception as e:
+            client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Unknown")
+            self.qb_status_indicator.config(text="❌ Error", foreground="red")
+            self.qb_status_message.config(text=f"{client_name} check failed: {str(e)}", foreground="red")
+            self._log(f'{client_name} connection check error: {e}')
+
+    def _update_qb_status(self, connected, error_msg=""):
+        """Update qBittorrent status indicator without performing connection check"""
+        if connected:
+            self.qb_status_indicator.config(text="✅ Connected", foreground="green")
+            self.qb_status_message.config(text="qBittorrent is running and accessible", foreground="green")
+        else:
+            self.qb_status_indicator.config(text="❌ Disconnected", foreground="red")
+            self.qb_status_message.config(text=f"Connection failed: {error_msg}", foreground="red")
     
     def _setup_episodes_panel(self):
         """Setup the episodes side panel"""
@@ -282,10 +517,84 @@ class App:
         download_search_btn.pack(side='left', padx=5)
         
         # Add to tracked button
-        add_to_tracked_search_btn = ttk.Button(search_buttons_frame, text='Add to Tracked', 
+        add_to_tracked_search_btn = ttk.Button(search_buttons_frame, text='Add to Tracked',
                                              command=self.add_search_result_to_tracked)
         add_to_tracked_search_btn.pack(side='left', padx=5)
-    
+
+    def _setup_bulk_torrents_panel(self):
+        """Setup the bulk torrents panel"""
+        # Create a frame for the bulk torrents panel
+        self.bulk_torrents_frame = ttk.Frame(self.main_paned)
+
+        # Bulk torrents panel header
+        header_frame = ttk.Frame(self.bulk_torrents_frame)
+        header_frame.pack(fill='x', padx=5, pady=5)
+
+        bulk_title_label = ttk.Label(header_frame, text='All Latest Torrents', font=('TkDefaultFont', 12, 'bold'))
+        bulk_title_label.pack(side='left')
+
+        close_btn = ttk.Button(header_frame, text='×', width=3, command=self.hide_bulk_torrents_panel)
+        close_btn.pack(side='right')
+
+        # Refresh button
+        refresh_btn = ttk.Button(header_frame, text='🔄 Refresh', command=self.refresh_bulk_torrents)
+        refresh_btn.pack(side='right', padx=5)
+
+        # Bulk torrents list area
+        self.bulk_torrents_list_frame = ttk.Frame(self.bulk_torrents_frame)
+        self.bulk_torrents_list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Create treeview for bulk torrents with checkboxes
+        self.bulk_torrents_tree = ttk.Treeview(self.bulk_torrents_list_frame,
+                                              columns=('Series', 'Episode', 'Status'),
+                                              show='tree headings', height=GUISettings.EPISODES_TREE_HEIGHT)
+
+        # Configure bulk torrents tree headers
+        self.bulk_torrents_tree.heading('#0', text='Title')
+        self.bulk_torrents_tree.heading('Series', text='Series')
+        self.bulk_torrents_tree.heading('Episode', text='Episode')
+        self.bulk_torrents_tree.heading('Status', text='Status')
+
+        # Set column widths
+        self.bulk_torrents_tree.column('#0', width=300)
+        self.bulk_torrents_tree.column('Series', width=150)
+        self.bulk_torrents_tree.column('Episode', width=80)
+        self.bulk_torrents_tree.column('Status', width=100)
+
+        # Scrollbar for bulk torrents
+        bulk_scrollbar = ttk.Scrollbar(self.bulk_torrents_list_frame, orient='vertical', command=self.bulk_torrents_tree.yview)
+        self.bulk_torrents_tree.configure(yscrollcommand=bulk_scrollbar.set)
+
+        self.bulk_torrents_tree.pack(side='left', fill='both', expand=True)
+        bulk_scrollbar.pack(side='right', fill='y')
+
+        # Bind double-click to toggle selection
+        self.bulk_torrents_tree.bind('<Double-1>', self.on_bulk_torrent_double_click)
+
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.bulk_torrents_frame)
+        buttons_frame.pack(pady=5)
+
+        # Select All button
+        select_all_btn = ttk.Button(buttons_frame, text='Select All',
+                                   command=self.select_all_bulk_torrents)
+        select_all_btn.pack(side='left', padx=5)
+
+        # Deselect All button
+        deselect_all_btn = ttk.Button(buttons_frame, text='Deselect All',
+                                     command=self.deselect_all_bulk_torrents)
+        deselect_all_btn.pack(side='left', padx=5)
+
+        # Download Selected button
+        download_selected_btn = ttk.Button(buttons_frame, text='Download Selected',
+                                          command=self.download_selected_bulk_torrents)
+        download_selected_btn.pack(side='left', padx=5)
+
+        # Download All button
+        download_all_btn = ttk.Button(buttons_frame, text='Download All',
+                                     command=self.download_all_bulk_torrents)
+        download_all_btn.pack(side='left', padx=5)
+
     def toggle_search_panel(self):
         """Toggle the search panel visibility"""
         if self.search_panel_visible:
@@ -330,8 +639,12 @@ class App:
         
         # Fetch search results in background thread
         def fetch_results():
-            results = NyaaScraper.search(query)
-            
+            results = NyaaScraper.search(query, self.quality_settings)
+
+            # Apply quality filtering
+            if self.quality_settings.quality_filter_mode != 'disabled':
+                results = self.quality_settings.filter_torrents(results)
+
             # Update UI in main thread
             self.root.after(0, lambda: self._populate_search_panel_results(results, loading_item))
         
@@ -356,8 +669,14 @@ class App:
             # Combine date and time into a single value
             datetime_value = self.combine_date_time(result['date'], result['time'])
             
-            self.search_results_tree.insert('', 'end', 
-                                           text=result['title'][:60] + ('...' if len(result['title']) > 60 else ''),
+            # Extract quality info for display
+            quality_info = self._extract_quality_from_title(result['title'])
+            display_title = result['title'][:55] + ('...' if len(result['title']) > 55 else '')
+            if quality_info and quality_info != 'Unknown':
+                display_title += f" [{quality_info}]"
+
+            self.search_results_tree.insert('', 'end',
+                                           text=display_title,
                                            values=(ep_text, result['size'], datetime_value, result['seeders'], result['leechers']),
                                            tags=(result['magnet'],))  # Store magnet link in tags
         
@@ -373,28 +692,28 @@ class App:
         if not selection:
             self._log('No search result selected.')
             return
-        
+
         item = selection[0]
         tags = self.search_results_tree.item(item, 'tags')
         if not tags or not tags[0]:
             self._log('No magnet link available for this search result.')
             return
-        
+
         magnet = tags[0]
         episode_title = self.search_results_tree.item(item, 'text')
-        
-        # Download using qBittorrent
-        qb = QBittorrentClient(self.qb_config)
-        connected, err = qb.connect()
-        if not connected:
-            self._log(f'qBittorrent connection failed: {err}')
-            return
-        
-        ok, err = qb.add_magnet(magnet, self.qb_config.category)
+
+        # Download using the configured torrent client
+        ok, err = self.torrent_client.launch_magnet(magnet, self.qb_config.category)
         if ok:
-            self._log(f'Search result "{episode_title}" sent to qBittorrent.')
+            client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Torrent client")
+            self._log(f'Search result "{episode_title}" sent to {client_name}.')
         else:
-            self._log(f'Failed to add search result to qBittorrent: {err}')
+            self._log(f'Failed to add search result to torrent client: {err}')
+            messagebox.showerror(
+                "Download Error",
+                f"Cannot download search result. {err}\n\n"
+                "Please check your torrent client settings and ensure it's running."
+            )
     
     def show_episodes_panel(self, anime_title, url):
         """Show the episodes panel with episodes from the given URL"""
@@ -464,28 +783,28 @@ class App:
         if not selection:
             self._log('No episode selected.')
             return
-        
+
         item = selection[0]
         tags = self.episodes_tree.item(item, 'tags')
         if not tags or not tags[0]:
             self._log('No magnet link available for this episode.')
             return
-        
+
         magnet = tags[0]
         episode_title = self.episodes_tree.item(item, 'text')
-        
-        # Download using qBittorrent
-        qb = QBittorrentClient(self.qb_config)
-        connected, err = qb.connect()
-        if not connected:
-            self._log(f'qBittorrent connection failed: {err}')
-            return
-        
-        ok, err = qb.add_magnet(magnet, self.qb_config.category)
+
+        # Download using the configured torrent client
+        ok, err = self.torrent_client.launch_magnet(magnet, self.qb_config.category)
         if ok:
-            self._log(f'Episode "{episode_title}" sent to qBittorrent.')
+            client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Torrent client")
+            self._log(f'Episode "{episode_title}" sent to {client_name}.')
         else:
-            self._log(f'Failed to add episode to qBittorrent: {err}')
+            self._log(f'Failed to add episode to torrent client: {err}')
+            messagebox.showerror(
+                "Download Error",
+                f"Cannot download episode. {err}\n\n"
+                "Please check your torrent client settings and ensure it's running."
+            )
     
     def add_search_result_to_tracked(self):
         """Add the selected search result to the tracked anime list"""
@@ -555,7 +874,256 @@ class App:
         
         dialog.bind('<Return>', lambda e: save_anime())
         dialog.bind('<Escape>', lambda e: cancel())
-    
+
+    def launch_magnet_system_default(self, magnet_link):
+        """Launch magnet link using system default (bypassing qBittorrent)"""
+        try:
+            import webbrowser
+            import platform
+            import subprocess
+            import os
+
+            if platform.system() == "Windows":
+                # On Windows, use os.startfile
+                os.startfile(magnet_link)
+                return True, ""
+            elif platform.system() == "Darwin":  # macOS
+                # On macOS, use the 'open' command
+                result = subprocess.run(['open', magnet_link], capture_output=True, text=True)
+                if result.returncode == 0:
+                    return True, ""
+                else:
+                    return False, f"macOS open command failed: {result.stderr}"
+            else:  # Linux and other Unix-like systems
+                # Try xdg-open first, then fall back to webbrowser
+                try:
+                    result = subprocess.run(['xdg-open', magnet_link], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        return True, ""
+                    else:
+                        raise Exception("xdg-open failed")
+                except (FileNotFoundError, Exception):
+                    # Fallback to webbrowser module
+                    webbrowser.open(magnet_link)
+                    return True, ""
+
+        except Exception as e:
+            return False, f"Failed to launch magnet with system default: {str(e)}"
+
+    def gather_all_latest_torrents(self, quality_settings=None):
+        """Gather all latest available torrents from all tracked series"""
+        all_torrents = []
+
+        for title, info in self.tracker.get_all():
+            url = info['url']
+            last_season = info.get('last_season', 1)
+            last_episode = info.get('last_episode', 0)
+
+            try:
+                self._log(f'Checking latest torrents for: {title}')
+                latest_season, latest_episode, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, self.tracker, quality_settings)
+
+                if latest_episode is not None and magnet is not None:
+                    # Check if this is newer than what we have
+                    if latest_season > last_season or (latest_season == last_season and latest_episode > last_episode):
+                        all_torrents.append({
+                            'title': title,
+                            'series_title': title,
+                            'episode_info': f'S{latest_season:02d}E{latest_episode:02d}',
+                            'magnet': magnet,
+                            'season': latest_season,
+                            'episode': latest_episode,
+                            'current_season': last_season,
+                            'current_episode': last_episode
+                        })
+                    else:
+                        # Even if not newer, include it as an option
+                        all_torrents.append({
+                            'title': f'{title} - S{latest_season:02d}E{latest_episode:02d} (Current)',
+                            'series_title': title,
+                            'episode_info': f'S{latest_season:02d}E{latest_episode:02d}',
+                            'magnet': magnet,
+                            'season': latest_season,
+                            'episode': latest_episode,
+                            'current_season': last_season,
+                            'current_episode': last_episode
+                        })
+
+            except Exception as e:
+                self._log(f'Error checking {title}: {e}')
+
+        return all_torrents
+
+    def _extract_quality_from_title(self, title):
+        """Extract quality information from torrent title"""
+        title_lower = title.lower()
+
+        # Check for common quality indicators
+        qualities = []
+
+        # Resolution qualities
+        if '360p' in title_lower:
+            qualities.append('360p')
+        if '480p' in title_lower:
+            qualities.append('480p')
+        if '720p' in title_lower:
+            qualities.append('720p')
+        if '1080p' in title_lower:
+            qualities.append('1080p')
+        if '1440p' in title_lower:
+            qualities.append('1440p')
+        if '2160p' in title_lower or '4k' in title_lower:
+            qualities.append('4K')
+
+        # Source qualities
+        if 'webrip' in title_lower:
+            qualities.append('WEBRip')
+        if 'bluray' in title_lower or 'bdrip' in title_lower:
+            qualities.append('BluRay')
+        if 'dvd' in title_lower:
+            qualities.append('DVD')
+        if 'hdtv' in title_lower:
+            qualities.append('HDTV')
+
+        # Overall quality
+        if 'sd' in title_lower and '480p' not in qualities:
+            qualities.append('SD')
+        if 'hd' in title_lower and not any(q in ['720p', '1080p', '1440p', '4K'] for q in qualities):
+            qualities.append('HD')
+
+        return ', '.join(qualities) if qualities else 'Unknown'
+
+    def show_bulk_torrents_panel(self):
+        """Show the bulk torrents panel"""
+        if not hasattr(self, 'bulk_torrents_panel_visible'):
+            self.bulk_torrents_panel_visible = False
+
+        if not self.bulk_torrents_panel_visible:
+            # Hide other panels if they're visible
+            if self.episodes_visible:
+                self.hide_episodes_panel()
+            if self.search_panel_visible:
+                self.hide_search_panel()
+
+            # Add the bulk torrents panel to the main paned window
+            self.main_paned.add(self.bulk_torrents_frame, weight=1)
+            self.bulk_torrents_panel_visible = True
+
+            # Load the torrents
+            self.refresh_bulk_torrents()
+
+    def hide_bulk_torrents_panel(self):
+        """Hide the bulk torrents panel"""
+        if hasattr(self, 'bulk_torrents_panel_visible') and self.bulk_torrents_panel_visible:
+            self.main_paned.remove(self.bulk_torrents_frame)
+            self.bulk_torrents_panel_visible = False
+
+    def refresh_bulk_torrents(self):
+        """Refresh the bulk torrents list"""
+        # Clear existing items
+        for item in self.bulk_torrents_tree.get_children():
+            self.bulk_torrents_tree.delete(item)
+
+        # Show loading message
+        loading_item = self.bulk_torrents_tree.insert('', 'end', text='Loading latest torrents...', values=('', '', ''))
+
+        # Load torrents in background thread
+        def load_torrents():
+            torrents = self.gather_all_latest_torrents(self.quality_settings)
+            self.root.after(0, lambda: self._populate_bulk_torrents(torrents, loading_item))
+
+        threading.Thread(target=load_torrents, daemon=True).start()
+
+    def _populate_bulk_torrents(self, torrents, loading_item):
+        """Populate the bulk torrents tree with fetched torrents"""
+        # Remove loading message
+        self.bulk_torrents_tree.delete(loading_item)
+
+        if not torrents:
+            self.bulk_torrents_tree.insert('', 'end', text='No torrents found', values=('', '', ''))
+            return
+
+        for torrent in torrents:
+            # Determine status
+            if torrent['season'] > torrent['current_season'] or \
+               (torrent['season'] == torrent['current_season'] and torrent['episode'] > torrent['current_episode']):
+                status = 'NEW'
+                status_color = 'green'
+            else:
+                status = 'Current'
+                status_color = 'blue'
+
+            # Extract quality info from title
+            quality_info = self._extract_quality_from_title(torrent['title'])
+
+            # Insert item
+            item = self.bulk_torrents_tree.insert('', 'end',
+                                                text=torrent['title'],
+                                                values=(torrent['series_title'],
+                                                       torrent['episode_info'],
+                                                       f"{status} ({quality_info})" if quality_info else status),
+                                                tags=(torrent['magnet'],))
+
+            # Color code the status
+            self.bulk_torrents_tree.tag_configure(f'status_{status}', foreground=status_color)
+
+        self._log(f'Loaded {len(torrents)} torrents from {len(set(t["series_title"] for t in torrents))} series')
+
+    def on_bulk_torrent_double_click(self, event):
+        """Handle double-click on bulk torrent to toggle selection"""
+        item = self.bulk_torrents_tree.identify_row(event.y)
+        if item:
+            # Toggle selection (you could also implement checkbox-like behavior here)
+            if self.bulk_torrents_tree.selection() and item in self.bulk_torrents_tree.selection():
+                self.bulk_torrents_tree.selection_remove(item)
+            else:
+                self.bulk_torrents_tree.selection_add(item)
+
+    def select_all_bulk_torrents(self):
+        """Select all torrents in the bulk list"""
+        all_items = self.bulk_torrents_tree.get_children()
+        self.bulk_torrents_tree.selection_set(all_items)
+
+    def deselect_all_bulk_torrents(self):
+        """Deselect all torrents in the bulk list"""
+        self.bulk_torrents_tree.selection_remove(self.bulk_torrents_tree.selection())
+
+    def download_selected_bulk_torrents(self):
+        """Download selected torrents from bulk list"""
+        selection = self.bulk_torrents_tree.selection()
+        if not selection:
+            self._log('No torrents selected for download.')
+            return
+
+        downloaded_count = 0
+        for item in selection:
+            tags = self.bulk_torrents_tree.item(item, 'tags')
+            if tags and tags[0]:
+                magnet = tags[0]
+                title = self.bulk_torrents_tree.item(item, 'text')
+
+                success, error_msg = self.launch_magnet_system_default(magnet)
+                if success:
+                    self._log(f'Launched torrent: {title[:50]}...')
+                    downloaded_count += 1
+                else:
+                    self._log(f'Failed to launch torrent {title[:30]}...: {error_msg}')
+
+        self._log(f'Successfully launched {downloaded_count} out of {len(selection)} selected torrents.')
+
+    def download_all_bulk_torrents(self):
+        """Download all torrents from bulk list"""
+        all_items = self.bulk_torrents_tree.get_children()
+        if not all_items:
+            self._log('No torrents available for download.')
+            return
+
+        # Select all items first
+        self.select_all_bulk_torrents()
+
+        # Then download them
+        self.download_selected_bulk_torrents()
+
     def on_anime_double_click(self, event):
         """Handle double-click on anime in the main list"""
         selection = self.anime_tree.selection()
@@ -720,6 +1288,29 @@ class App:
         self.check_thread = threading.Thread(target=self._periodic_check, daemon=True)
         self.check_thread.start()
 
+    def _start_qb_health_check(self):
+        """Start the qBittorrent health check thread"""
+        self.qb_health_check_thread = threading.Thread(target=self._qb_health_check_loop, daemon=True)
+        self.qb_health_check_thread.start()
+
+    def _qb_health_check_loop(self):
+        """Background loop to periodically check qBittorrent connection"""
+        while not self.stop_event.is_set():
+            try:
+                # Only check if the window is still open
+                if self.root.winfo_exists():
+                    self._check_qb_connection()
+                else:
+                    break
+            except Exception as e:
+                print(f"[DEBUG] qBittorrent health check error: {e}")
+
+            # Check every 5 minutes (300 seconds)
+            for _ in range(300):
+                if self.stop_event.is_set():
+                    break
+                time.sleep(1)
+
     def _periodic_check(self):
         while not self.stop_event.is_set():
             self._check_all()
@@ -730,25 +1321,27 @@ class App:
 
     def _check_all(self):
         self._log('Checking for new episodes...')
-        qb = QBittorrentClient(self.qb_config)
-        connected, err = qb.connect()
-        if not connected:
-            self._log(f'qBittorrent connection failed: {err}')
+        available, err = self.torrent_client.test_connection()
+        if not available:
+            self._log(f'Torrent client connection failed: {err}')
+            self._update_qb_status(False, err)
+            # Don't show dialog for periodic checks to avoid spam, just update status
             return
         for title, info in self.tracker.get_all():
             url = info['url']
             last_s, last_ep = self.tracker.get_last_season_and_episode(title)
             try:
-                latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, self.tracker)
+                latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, self.tracker, self.quality_settings)
                 if latest_ep is None or magnet is None:
                     self._log(f'Failed to scrape: {title}')
                     continue
                 if latest_s > last_s or (latest_s == last_s and latest_ep > last_ep):
-                    ok, err = qb.add_magnet(magnet, self.qb_config.category)
+                    ok, err = self.torrent_client.launch_magnet(magnet, self.qb_config.category)
                     if ok:
                         self.tracker.update_episode(title, latest_s, latest_ep)
                         self._update_tree_episode(title, latest_s, latest_ep)
-                        self._log(f'New episode {latest_ep} for {title} sent to qBittorrent.')
+                        client_name = TorrentClientConfig.SUPPORTED_CLIENTS.get(self.torrent_config.preferred_client, "Torrent client")
+                        self._log(f'New episode {latest_ep} for {title} sent to {client_name}.')
                     else:
                         self._log(f'Failed to add magnet for {title}: {err}')
                 else:
@@ -930,7 +1523,7 @@ def run_headless():
             try:
                 print(f"[DEBUG] Scraping latest episode for {title}...")
                 try:
-                    latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, tracker)
+                    latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, tracker, self.quality_settings)
                     print(f"[DEBUG] Scrape result - Season: {latest_s}, Episode: {latest_ep}, Magnet: {'Found' if magnet else 'None'}")
                 except Exception as scrape_error:
                     print(f"[WARNING] Scraping failed for {title}: {scrape_error}")
