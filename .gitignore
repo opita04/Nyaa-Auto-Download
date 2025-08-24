@@ -152,3 +152,6 @@ dist/
 !.cursor/rules/basicrules.mdc
 .cursorrules
 cursor-docs/
+
+# Warp terminal AI context file
+warp.md
