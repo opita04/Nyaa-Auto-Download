@@ -150,3 +150,5 @@ cython_debug/
 dist/
 .cursor/
 !.cursor/rules/basicrules.mdc
+.cursorrules
+cursor-docs/
