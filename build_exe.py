@@ -33,7 +33,7 @@ def create_executable():
     cmd = [
         'pyinstaller',
         '--onefile',                    # Create single executable
-        # '--windowed',                   # Temporarily removed to see console output
+        '--windowed',                   # No console window (GUI app)
         '--name=NyaaAutoDownload',      # Executable name
         '--add-data=modules;modules',   # Include modules folder
         '--add-data=utils;utils',       # Include utils folder
