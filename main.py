@@ -314,6 +314,14 @@ Backup: {SETTINGS_FILE}.backup"""
 
             # Add the settings panel to the main paned window
             self.main_paned.add(self.settings_frame, weight=1)
+            
+            # Show the settings panel content
+            self.settings_panel.show()
+            
+            # Force layout update to ensure proper rendering
+            self.root.update_idletasks()
+            self.root.update()
+            
             self.settings_panel_visible = True
             # Focus on the first entry field in the settings panel
             if hasattr(self.settings_panel, 'qb_host'):
@@ -322,6 +330,8 @@ Backup: {SETTINGS_FILE}.backup"""
     def hide_settings_panel(self):
         """Hide the settings panel"""
         if hasattr(self, 'settings_panel_visible') and self.settings_panel_visible:
+            # Hide the settings panel content
+            self.settings_panel.hide()
             self.main_paned.remove(self.settings_frame)
             self.settings_panel_visible = False
 
@@ -1522,6 +1532,9 @@ def run_headless():
         test_limit = min(TestSettings.HEADLESS_TEST_LIMIT, len(anime_list))
         print(f"[DEBUG] Testing with first {test_limit} entries only")
         
+        # Initialize quality settings for headless mode
+        quality_settings = QualitySettings()
+        
         for i, (title, info) in enumerate(anime_list[:test_limit]):
             print(f"[DEBUG] Processing {i+1}/{test_limit}: {title}")
             url = info['url']
@@ -1532,7 +1545,7 @@ def run_headless():
             try:
                 print(f"[DEBUG] Scraping latest episode for {title}...")
                 try:
-                    latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, tracker, self.quality_settings)
+                    latest_s, latest_ep, magnet = NyaaScraper.get_latest_episode_and_magnet(url, title, tracker, quality_settings)
                     print(f"[DEBUG] Scrape result - Season: {latest_s}, Episode: {latest_ep}, Magnet: {'Found' if magnet else 'None'}")
                 except Exception as scrape_error:
                     print(f"[WARNING] Scraping failed for {title}: {scrape_error}")
@@ -1576,11 +1589,7 @@ def main():
         log_file = setup_logging()
         print(f'Logging initialized. Log file: {log_file}')
         
-        # Check for tracker file
-        import os
-        if not os.path.exists(TRACKER_FILE):
-            print(f'ERROR: {TRACKER_FILE} not found!')
-            return
+        # Note: AnimeTracker handles missing tracker file by creating empty tracker
         
         parser = argparse.ArgumentParser(description='Nyaa Auto Downloader')
         parser.add_argument('--headless', action='store_true', 

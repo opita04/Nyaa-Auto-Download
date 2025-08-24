@@ -33,13 +33,14 @@ def create_executable():
     cmd = [
         'pyinstaller',
         '--onefile',                    # Create single executable
-        '--windowed',                   # No console window (GUI app)
+        # '--windowed',                   # Temporarily removed to see console output
         '--name=NyaaAutoDownload',      # Executable name
         '--add-data=modules;modules',   # Include modules folder
         '--add-data=utils;utils',       # Include utils folder
         '--hidden-import=tkinter',      # Ensure tkinter is included
         '--hidden-import=requests',     # Ensure requests is included
         '--hidden-import=beautifulsoup4', # Ensure beautifulsoup4 is included
+        '--hidden-import=qbittorrent-api', # Ensure qbittorrent-api is included
         '--exclude-module=pytest',      # Exclude test modules
         '--exclude-module=unittest',    # Exclude test modules
         'main.py'                       # Main entry point

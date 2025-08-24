@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nyaa Auto Downloader</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            max-width: 600px;
+            margin: 20px;
+        }
+        
+        .app-icon {
+            width: 128px;
+            height: 128px;
+            margin: 0 auto 20px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        
+        .description {
+            font-size: 1.1em;
+            margin-bottom: 30px;
+            line-height: 1.6;
+            opacity: 0.8;
+        }
+        
+        .download-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            color: white;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(238, 90, 36, 0.4);
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(238, 90, 36, 0.6);
+        }
+        
+        .version {
+            margin-top: 20px;
+            opacity: 0.7;
+            font-size: 0.9em;
+        }
+        
+        .features {
+            margin-top: 30px;
+            text-align: left;
+        }
+        
+        .features h3 {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .features ul {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .features li {
+            margin: 8px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        
+        .features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4ecdc4;
+            font-weight: bold;
+        }
+        
+        .github-link {
+            margin-top: 30px;
+        }
+        
+        .github-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px;
+            color: white;
+            border-radius: 25px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+        
+        .github-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-icon">🎬</div>
+        <h1>Nyaa Auto Downloader</h1>
+        <p class="subtitle">Automated Anime Download Manager</p>
+        
+        <p class="description">
+            A powerful desktop application that automatically downloads anime from Nyaa.si based on your preferences. 
+            Set it up once and let it handle your anime downloads automatically.
+        </p>
+        
+        <a href="#" class="download-btn" id="downloadBtn">
+            📥 Download for Windows
+        </a>
+        
+        <div class="features">
+            <h3>Features</h3>
+            <ul>
+                <li>Automatic RSS feed monitoring</li>
+                <li>Customizable download filters</li>
+                <li>Duplicate detection and management</li>
+                <li>Multiple download directories</li>
+                <li>Clean and intuitive GUI</li>
+                <li>Regular expression support</li>
+                <li>Background operation</li>
+            </ul>
+        </div>
+        
+        <div class="version">
+            Version 2.0 | Windows 10/11 Compatible
+        </div>
+        
+        <div class="github-link">
+            <a href="https://github.com/YourUsername/Nyaa-Auto-Download" class="github-btn" target="_blank">
+                View on GitHub
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Download functionality
+        document.getElementById('downloadBtn').addEventListener('click', function(e) {
+            e.preventDefault();
+            // Direct download from Firebase Hosting (ZIP file)
+            window.location.href = './NyaaAutoDownload.zip';
+        });
+    </script>
+</body>
+</html>
