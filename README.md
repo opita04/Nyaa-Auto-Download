@@ -19,13 +19,31 @@ A Python-based desktop application that automatically monitors and downloads ani
 
 *The main interface showing tracked anime management and Nyaa.si search functionality*
 
-## Requirements
+## Download Options
 
+### 🚀 **Windows Executable (Recommended)**
+
+**No Python installation required!**
+
+1. **Download**: Go to [Releases](https://github.com/opita04/Nyaa-Auto-Download/releases) and download `NyaaAutoDownload.exe`
+2. **Run**: Double-click the executable - that's it!
+3. **Configure**: Set up qBittorrent connection in the app settings
+
+**Requirements for executable:**
+- Windows 10/11
+- qBittorrent (with Web UI enabled)
+- Internet connection
+
+### 📝 **Source Code Installation**
+
+**For developers or advanced users:**
+
+**Requirements:**
 - Python 3.7+
 - qBittorrent (with Web UI enabled)
 - Internet connection
 
-## Installation
+## Installation (Source Code)
 
 ### 1. Clone the Repository
 
