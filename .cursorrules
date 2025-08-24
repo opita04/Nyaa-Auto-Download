@@ -20,13 +20,13 @@
 
 ### Actions to Perform:
 1. **Clean existing build artifacts**
-   - Remove `dist/Nyaa.si Anime Auto Downloader.exe`
+   - Remove `dist/NyaDownloader.exe`
    - Remove `build/` directory contents
    - Clean any `__pycache__` directories
 
 2. **Rebuild executable using PyInstaller**
-   - Run: `pyinstaller NyaaAutoDownloader.spec`
-   - Or fallback: `pyinstaller --onefile --name "Nyaa.si Anime Auto Downloader" --icon "dist/Icon.ico" main.py`
+   - Run: `pyinstaller NyaDownloader.spec`
+   - Or fallback: `pyinstaller --onefile --name "NyaDownloader" --icon "dist/Icon.ico" main.py`
 
 3. **Verify build success**
    - Check if new executable exists
@@ -54,13 +54,13 @@ rebuild_exe.bat
 **Manual Commands:**
 ```bash
 # Clean build artifacts
-rm -rf dist/Nyaa.si Anime Auto Downloader.exe build/
+rm -rf dist/NyaDownloader.exe build/
 
 # Build with spec file
-pyinstaller NyaaAutoDownloader.spec
+pyinstaller NyaDownloader.spec
 
 # Build without spec file (fallback)
-pyinstaller --onefile --name "Nyaa.si Anime Auto Downloader" --icon "dist/Icon.ico" main.py
+pyinstaller --onefile --name "NyaDownloader" --icon "dist/Icon.ico" main.py
 ```
 
 **Available Files:**

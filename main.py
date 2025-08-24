@@ -199,12 +199,14 @@ Backup: {SETTINGS_FILE}.backup"""
         self.settings_btn.pack(side='top', fill='x')
 
         # Bulk Torrents Button (List icon)
-        self.bulk_btn = tk.Button(controls_frame, text="📋", width=3, command=self.show_bulk_torrents_panel,
+        self.bulk_btn = tk.Button(controls_frame, text="📋", width=3, command=self.toggle_bulk_torrents_panel,
                                 font=('TkDefaultFont', 12))
         self.bulk_btn.pack(side='top', fill='x')
 
-        # Hidden panels
+        # Initialize all panel visibility states
         self.search_panel_visible = False
+        self.settings_panel_visible = False
+        self.bulk_torrents_panel_visible = False
 
         # Anime List Section
         list_frame = ttk.LabelFrame(self.left_frame, text='Tracked Anime')
@@ -225,20 +227,18 @@ Backup: {SETTINGS_FILE}.backup"""
         # Bind right-click for context menu
         self.anime_tree.bind('<Button-3>', self.on_anime_right_click)
         
-        # Create context menu
+        # Create context menu with all anime-specific actions
         self.context_menu = tk.Menu(self.root, tearoff=0)
+        self.context_menu.add_command(label="Remove Series", command=self.remove_series)
+        self.context_menu.add_command(label="Edit Title", command=self.edit_series)
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="Toggle Multi-Episode Downloads", command=self.toggle_multi_episode)
         
         list_frame.rowconfigure(0, weight=1)
         list_frame.columnconfigure(0, weight=1)
-        remove_btn = ttk.Button(list_frame, text='Remove Series', command=self.remove_series)
-        remove_btn.grid(row=1, column=0, sticky='ew', pady=3)
-        edit_btn = ttk.Button(list_frame, text='Edit Title', command=self.edit_series)
-        edit_btn.grid(row=2, column=0, sticky='ew', pady=3)
-        multi_episode_btn = ttk.Button(list_frame, text='Toggle Multi-Episode', command=self.toggle_multi_episode)
-        multi_episode_btn.grid(row=3, column=0, sticky='ew', pady=3)
+        # Keep only the global Force Check Now button - anime-specific actions moved to right-click context menu
         force_btn = ttk.Button(list_frame, text='Force Check Now', command=self.force_check)
-        force_btn.grid(row=4, column=0, sticky='ew', pady=3)
+        force_btn.grid(row=1, column=0, sticky='ew', pady=3)
 
         # Initialize Settings Panel (hidden by default)
         self.settings_frame = ttk.Frame(self.main_paned)
@@ -993,6 +993,13 @@ Backup: {SETTINGS_FILE}.backup"""
 
         return ', '.join(qualities) if qualities else 'Unknown'
 
+    def toggle_bulk_torrents_panel(self):
+        """Toggle the visibility of the bulk torrents panel"""
+        if hasattr(self, 'bulk_torrents_panel_visible') and self.bulk_torrents_panel_visible:
+            self.hide_bulk_torrents_panel()
+        else:
+            self.show_bulk_torrents_panel()
+
     def show_bulk_torrents_panel(self):
         """Show the bulk torrents panel"""
         if not hasattr(self, 'bulk_torrents_panel_visible'):
@@ -1004,6 +1011,8 @@ Backup: {SETTINGS_FILE}.backup"""
                 self.hide_episodes_panel()
             if self.search_panel_visible:
                 self.hide_search_panel()
+            if hasattr(self, 'settings_panel_visible') and self.settings_panel_visible:
+                self.hide_settings_panel()
 
             # Add the bulk torrents panel to the main paned window
             self.main_paned.add(self.bulk_torrents_frame, weight=1)

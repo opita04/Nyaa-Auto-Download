@@ -31,7 +31,7 @@ class GUISettings:
     """GUI-related settings and constants"""
     
     # Main window
-    WINDOW_TITLE = 'Nyaa.si Anime Auto Downloader'
+    WINDOW_TITLE = 'NyaDownloader'
     MAIN_PADDING = '10'
     
     # Treeview columns
